@@ -10,17 +10,29 @@ CREATE TABLE DM.DM_F101_ROUND_F(
 	ledger_account CHAR(5),
 	characteristic CHAR(1),
 	balance_in_rub NUMERIC(23,8),
+	r_balance_in_rub NUMERIC(23,8),
 	balance_in_val NUMERIC(23,8),
+	r_balance_in_val NUMERIC(23,8),
 	balance_in_total NUMERIC(23,8),
+	r_balance_in_total NUMERIC(23,8),
 	turn_deb_rub NUMERIC(23,8),
+	r_turn_deb_rub NUMERIC(23,8),
 	turn_deb_val NUMERIC(23,8),
+	r_turn_deb_val NUMERIC(23,8),
 	turn_deb_total NUMERIC(23,8),
+	r_turn_deb_total NUMERIC(23,8),
 	turn_cre_rub NUMERIC(23,8),
+	r_turn_cre_rub NUMERIC(23,8),
 	turn_cre_val NUMERIC(23,8),
+	r_turn_cre_val NUMERIC(23,8),
 	turn_cre_total NUMERIC(23,8),
+	r_turn_cre_total NUMERIC(23,8),
 	balance_out_rub NUMERIC(23,8),
+	r_balance_out_rub NUMERIC(23,8),
 	balance_out_val NUMERIC(23,8),
-	balance_out_total NUMERIC(23,8)
+	r_balance_out_val NUMERIC(23,8),
+	balance_out_total NUMERIC(23,8),
+	r_balance_out_total NUMERIC(23,8)
 	);
 --------------------------------------------
 
@@ -28,19 +40,21 @@ CREATE TABLE DM.DM_F101_ROUND_F(
 --------------------------------------------
 
 CREATE OR REPLACE FUNCTION dm.fill_f101_round_f(i_OnDate DATE)
-RETURNS VOID AS $$
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_FromDate DATE;
     v_ToDate DATE;
 BEGIN
-    -- Определение дат начала и конца отчетного периода
-    v_FromDate := (DATE_TRUNC('month', i_OnDate) - INTERVAL '1 month')::DATE;
-    v_ToDate := (DATE_TRUNC('month', i_OnDate) - INTERVAL '1 day')::DATE;
+    -- Определяем начальную и конечную даты отчетного периода
+    v_FromDate := date_trunc('month', i_OnDate) - INTERVAL '1 month';
+    v_ToDate := v_FromDate + INTERVAL '1 month' - INTERVAL '1 day';
 
-    -- Удаление записей за дату расчета
-    DELETE FROM DM.DM_F101_ROUND_F WHERE TO_DATE = v_ToDate;
+    -- Удаляем существующие записи за отчетный период
+    DELETE FROM DM.DM_F101_ROUND_F WHERE FROM_DATE = v_FromDate AND TO_DATE = v_ToDate;
 
-    -- Вставка новых данных, расчеты
+    -- Вставляем новые данные в таблицу отчета
     INSERT INTO DM.DM_F101_ROUND_F (
         FROM_DATE, TO_DATE, CHAPTER, LEDGER_ACCOUNT, CHARACTERISTIC,
         BALANCE_IN_RUB, BALANCE_IN_VAL, BALANCE_IN_TOTAL,
@@ -48,39 +62,79 @@ BEGIN
         TURN_CRE_RUB, TURN_CRE_VAL, TURN_CRE_TOTAL,
         BALANCE_OUT_RUB, BALANCE_OUT_VAL, BALANCE_OUT_TOTAL
     )
+    WITH balances AS (
+        -- CTE для расчета остатков
+        SELECT
+            LEFT(a.account_number, 5)::INTEGER AS LEDGER_ACCOUNT,
+            a.char_type AS CHARACTERISTIC,
+            COALESCE(SUM(CASE WHEN a.currency_code IN (810, 643) THEN b.balance_out_rub ELSE 0 END), 0) AS BALANCE_IN_RUB,
+            COALESCE(SUM(CASE WHEN a.currency_code NOT IN (810, 643) THEN b.balance_out_rub ELSE 0 END), 0) AS BALANCE_IN_VAL,
+            COALESCE(SUM(b.balance_out_rub), 0) AS BALANCE_IN_TOTAL
+        FROM
+            DS.MD_ACCOUNT_D a
+        LEFT JOIN
+            DM.DM_ACCOUNT_BALANCE_F b ON a.account_rk = b.account_rk AND b.on_date = v_FromDate - INTERVAL '1 day'
+        GROUP BY
+            LEFT(a.account_number, 5), a.char_type
+		
+    ), turnovers AS (
+        -- CTE turn
+        SELECT
+            LEFT(a.account_number, 5)::INTEGER AS LEDGER_ACCOUNT,
+            COALESCE(SUM(CASE WHEN a.currency_code IN (810, 643) THEN t.debet_amount_rub ELSE 0 END), 0) AS TURN_DEB_RUB,
+            COALESCE(SUM(CASE WHEN a.currency_code NOT IN (810, 643) THEN t.debet_amount_rub ELSE 0 END), 0) AS TURN_DEB_VAL,
+            COALESCE(SUM(t.debet_amount_rub), 0) AS TURN_DEB_TOTAL,
+            COALESCE(SUM(CASE WHEN a.currency_code IN (810, 643) THEN t.credit_amount_rub ELSE 0 END), 0) AS TURN_CRE_RUB,
+            COALESCE(SUM(CASE WHEN a.currency_code NOT IN (810, 643) THEN t.credit_amount_rub ELSE 0 END), 0) AS TURN_CRE_VAL,
+            COALESCE(SUM(t.credit_amount_rub), 0) AS TURN_CRE_TOTAL
+        FROM
+            DS.MD_ACCOUNT_D a
+        LEFT JOIN
+            DM.DM_ACCOUNT_TURNOVER_F t ON a.account_rk = t.account_rk AND t.on_date BETWEEN v_FromDate AND v_ToDate
+        GROUP BY
+            LEFT(a.account_number, 5)
+    ), balance AS( 
+        -- CTE Balance_out
+    SELECT
+		LEFT(a.account_number, 5)::INTEGER AS LEDGER_ACCOUNT,
+		COALESCE(SUM(CASE WHEN a.currency_code IN (810, 643) THEN balance_out_rub ELSE 0 END), 0) BALANCE_OUT_RUB,
+		COALESCE(SUM(CASE WHEN a.currency_code NOT IN (810, 643) THEN balance_out_rub ELSE 0 END), 0) BALANCE_OUT_VAL,
+		COALESCE(SUM(CASE WHEN a.currency_code IN (810, 643) THEN balance_out_rub ELSE 0 END), 0) +
+		COALESCE(SUM(CASE WHEN a.currency_code NOT IN (810, 643) THEN balance_out_rub ELSE 0 END), 0) AS BALANCE_OUT_TOTAL
+	FROM DM.DM_ACCOUNT_BALANCE_F b
+	JOIN DS.MD_ACCOUNT_D a USING (account_rk)
+	WHERE on_date = v_ToDate --'2018.01.31'
+	group by LEFT(a.account_number, 5)
+	order by LEDGER_ACCOUNT
+		)
+	
     SELECT
         v_FromDate AS FROM_DATE,
         v_ToDate AS TO_DATE,
-        la.chapter AS CHAPTER,
-        SUBSTRING(ad.account_number FROM 1 FOR 5)::BIGINT AS LEDGER_ACCOUNT,
-        ad.char_type AS CHARACTERISTIC,
-        SUM(CASE WHEN ad.currency_code IN ('810', '643') THEN bf.balance_out_rub ELSE 0 END) AS BALANCE_IN_RUB,
-        SUM(CASE WHEN ad.currency_code NOT IN ('810', '643') THEN bf.balance_out_rub ELSE 0 END) AS BALANCE_IN_VAL,
-        SUM(bf.balance_out_rub) AS BALANCE_IN_TOTAL,
-        COALESCE (SUM(CASE WHEN ad.currency_code IN ('810', '643') THEN tf.debet_amount_rub ELSE 0 END),0) AS TURN_DEB_RUB,
-        SUM(CASE WHEN ad.currency_code NOT IN ('810', '643') THEN tf.debet_amount_rub ELSE 0 END) AS TURN_DEB_VAL,
-        COALESCE (SUM(tf.debet_amount_rub),0) AS TURN_DEB_TOTAL,
-        COALESCE (SUM(CASE WHEN ad.currency_code IN ('810', '643') THEN tf.credit_amount_rub ELSE 0 END),0) AS TURN_CRE_RUB,
-        SUM(CASE WHEN ad.currency_code NOT IN ('810', '643') THEN tf.credit_amount_rub ELSE 0 END) AS TURN_CRE_VAL,
-        COALESCE (SUM(tf.credit_amount_rub),0) AS TURN_CRE_TOTAL,
-        SUM(CASE WHEN ad.currency_code IN ('810', '643') THEN bf2.balance_out_rub ELSE 0 END) AS BALANCE_OUT_RUB,
-        SUM(CASE WHEN ad.currency_code NOT IN ('810', '643') THEN bf2.balance_out_rub ELSE 0 END) AS BALANCE_OUT_VAL,
-        SUM(bf2.balance_out_rub) AS BALANCE_OUT_TOTAL
-    FROM
-        ds.md_account_d ad
-        JOIN ds.md_ledger_account_s la ON SUBSTRING(ad.account_number FROM 1 FOR 5)::BIGINT = la.ledger_account
-        LEFT JOIN DM.DM_ACCOUNT_BALANCE_F bf ON bf.account_rk = ad.account_rk AND bf.on_date = v_FromDate - INTERVAL '1 day'
-        LEFT JOIN DM.DM_ACCOUNT_TURNOVER_F tf ON tf.account_rk = ad.account_rk AND tf.on_date BETWEEN v_FromDate AND v_ToDate
-        LEFT JOIN DM.DM_ACCOUNT_BALANCE_F bf2 ON bf2.account_rk = ad.account_rk AND bf2.on_date = v_ToDate
-    GROUP BY
-        la.chapter,
-        SUBSTRING(ad.account_number FROM 1 FOR 5),
-        ad.char_type;
+        l.chapter AS CHAPTER,
+        bs.LEDGER_ACCOUNT,
+        bs.CHARACTERISTIC,
+        bs.BALANCE_IN_RUB,
+        bs.BALANCE_IN_VAL,
+        bs.BALANCE_IN_TOTAL,
+        t.TURN_DEB_RUB,
+        t.TURN_DEB_VAL,
+        t.TURN_DEB_TOTAL,
+        t.TURN_CRE_RUB,
+        t.TURN_CRE_VAL,
+        t.TURN_CRE_TOTAL,
+        b.BALANCE_OUT_RUB,
+		b.BALANCE_OUT_VAL,
+        b.BALANCE_OUT_TOTAL
+    FROM balance b
+    JOIN balances bs USING (LEDGER_ACCOUNT)
+	JOIN turnovers t USING (LEDGER_ACCOUNT)
+    LEFT JOIN DS.MD_LEDGER_ACCOUNT_S l ON bs.LEDGER_ACCOUNT = l.ledger_account;--CAST(l.ledger1_account AS INTEGER);
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 --------------------------------------------
-
+	
 -- Процедура заполнения таблицы dm.dm_f101_round_f с логированием
 --------------------------------------------
 DO $$
@@ -109,6 +163,7 @@ BEGIN
 END $$;
 
 --------------------------------------------
+
 --ПРОВЕРКА 
 -- 18 счетов
 --SELECT distinct(SUBSTRING(account_number FROM 1 FOR 5)) as test FROM ds.md_account_d

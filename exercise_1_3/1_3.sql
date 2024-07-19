@@ -1,4 +1,5 @@
 --------------------------------------------
+
 -- 1.3 расчет 101 формы за январь 2018 года
 --------------------------------------------
 DROP TABLE IF EXISTS DM.DM_F101_ROUND_F;
@@ -103,7 +104,7 @@ BEGIN
 		COALESCE(SUM(CASE WHEN a.currency_code NOT IN (810, 643) THEN balance_out_rub ELSE 0 END), 0) AS BALANCE_OUT_TOTAL
 	FROM DM.DM_ACCOUNT_BALANCE_F b
 	JOIN DS.MD_ACCOUNT_D a USING (account_rk)
-	WHERE on_date = v_ToDate --'2018.01.31'
+	WHERE on_date = v_ToDate
 	group by LEFT(a.account_number, 5)
 	order by LEDGER_ACCOUNT
 		)
@@ -129,15 +130,17 @@ BEGIN
     FROM balance b
     JOIN balances bs USING (LEDGER_ACCOUNT)
 	JOIN turnovers t USING (LEDGER_ACCOUNT)
-    LEFT JOIN DS.MD_LEDGER_ACCOUNT_S l ON bs.LEDGER_ACCOUNT = l.ledger_account;--CAST(l.ledger1_account AS INTEGER);
+    LEFT JOIN DS.MD_LEDGER_ACCOUNT_S l ON bs.LEDGER_ACCOUNT = l.ledger_account;
 END;
 $$;
-
 --------------------------------------------
-	
+
 -- Процедура заполнения таблицы dm.dm_f101_round_f с логированием
 --------------------------------------------
-DO $$
+
+CREATE OR REPLACE PROCEDURE dm.fill_f101_round_procedure(input_date DATE)
+LANGUAGE plpgsql
+AS $$
 DECLARE
     table_or_function_name VARCHAR := 'fill_f101_round_f';
     ready_to_start TIMESTAMP;
@@ -148,7 +151,7 @@ BEGIN
     ready_to_start := clock_timestamp();
     start_time := clock_timestamp();
     
-    PERFORM dm.fill_f101_round_f('2018-02-01'::DATE);
+    PERFORM dm.fill_f101_round_f(input_date);
     
     end_time := clock_timestamp();
     
@@ -162,9 +165,5 @@ BEGIN
             count_record);
 END $$;
 
+CALL dm.fill_f101_round_procedure('2018-02-01');
 --------------------------------------------
-
---ПРОВЕРКА 
--- 18 счетов
---SELECT distinct(SUBSTRING(account_number FROM 1 FOR 5)) as test FROM ds.md_account_d
-

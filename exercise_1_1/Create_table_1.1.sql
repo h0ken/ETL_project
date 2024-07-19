@@ -29,7 +29,7 @@ CREATE TABLE ds.md_account_d (
 	, account_number 			VARCHAR(20) NOT NULL
 	, char_type 				VARCHAR(1) NOT NULL
 	, currency_rk 				INTEGER NOT NULL
-	, currency_code 			VARCHAR(3) NOT NULL
+	, currency_code 			INTEGER NOT NULL
 	, PRIMARY KEY (data_actual_date, account_rk)
 );
 

@@ -6,17 +6,15 @@
 -- Создание таблицы витрины оборотов DM.DM_ACCOUNT_TURNOVER_F
 ------------------------------------------------
 CREATE SCHEMA IF NOT EXISTS DM;
-
 DROP TABLE IF EXISTS DM.DM_ACCOUNT_TURNOVER_F;
-
 CREATE TABLE DM.DM_ACCOUNT_TURNOVER_F(
-	on_date DATE,
-	account_rk NUMERIC, 
-	credit_amount NUMERIC(23,8),
-	credit_amount_rub NUMERIC(23,8),
-	debet_amount NUMERIC(23,8),
-	debet_amount_rub NUMERIC(23,8),
-	PRIMARY KEY (on_date, account_rk)
+	  on_date 				DATE
+	, account_rk 			NUMERIC
+	, credit_amount 		NUMERIC(23,8)
+	, credit_amount_rub		NUMERIC(23,8)
+	, debet_amount 			NUMERIC(23,8)
+	, debet_amount_rub 		NUMERIC(23,8)
+	, PRIMARY KEY (on_date, account_rk)
 );
 
 ------------------------------------------------
@@ -80,12 +78,13 @@ $$ LANGUAGE plpgsql;
 
 ------------------------------------------------
 
--- Выполнение процедуры для заполнения каждого дня января 2018 года
+-- Создание и выполнение процедуры для заполнения каждого дня января 2018 года
 ------------------------------------------------
-
-DO $$
+CREATE OR REPLACE PROCEDURE dm.fill_account_turnover_procedure(start_date DATE, end_date DATE)
+LANGUAGE plpgsql
+AS $$
 DECLARE
-    currentDate DATE := '2018-01-01';
+    currentDate DATE := start_date;
     table_or_function_name VARCHAR := 'fill_account_turnover_f';
     ready_to_start TIMESTAMP;
     start_time TIMESTAMP;
@@ -95,7 +94,7 @@ BEGIN
     ready_to_start := clock_timestamp();
     start_time := clock_timestamp();
     
-    WHILE currentDate <= '2018-01-31' LOOP
+    WHILE currentDate <= end_date LOOP
         PERFORM dm.fill_account_turnover_f(currentDate);
         currentDate := currentDate + INTERVAL '1 day';
     END LOOP;
@@ -112,21 +111,25 @@ BEGIN
             count_record);
 END $$;
 
-------------------------------------------------
---------- ПРОВЕРКА
-SELECT count(distinct account_rk) FROM DM.DM_ACCOUNT_TURNOVER_F --витрина оборотов
 
-WITH t1 As (SELECT credit_account_rk as account_rk FROM ds.ft_posting_f
-	UNION
-SELECT debet_account_rk as account_rk FROM ds.ft_posting_f)
-	SELECT count(distinct account_rk) FROM t1
-----------
-SELECT * FROM DM.DM_ACCOUNT_TURNOVER_F
-WHERE on_date = '2018-01-09' AND account_rk = 13630
+CALL dm.fill_account_turnover_procedure('2018-01-01', '2018-01-31');
+
+------------------------------------------------
+
+-- --------- ПРОВЕРКА
+-- SELECT count(distinct account_rk) FROM DM.DM_ACCOUNT_TURNOVER_F
+
+-- WITH t1 As (SELECT credit_account_rk as account_rk FROM ds.ft_posting_f
+-- UNION
+-- SELECT debet_account_rk as account_rk FROM ds.ft_posting_f)
+-- SELECT count(distinct account_rk) FROM t1
+-- -- ----------
+-- SELECT * FROM DM.DM_ACCOUNT_TURNOVER_F
+-- WHERE on_date = '2018-01-09' AND account_rk = 13630
 	
-SELECT debet_account_rk, sum(debet_amount) FROM ds.ft_posting_f
-WHERE oper_date = '2018-01-09' AND debet_account_rk = 13630
-GROUP BY debet_account_rk
+-- SELECT credit_account_rk, sum(credit_amount) FROM ds.ft_posting_f
+-- WHERE oper_date = '2018-01-09' AND credit_account_rk = 13630
+-- GROUP BY credit_account_rk
 ------------------------------------------------
 	
 -- Создание таблицы витрины остатка DM.DM_ACCOUNT_BALANCE_F
@@ -264,9 +267,12 @@ $$ LANGUAGE plpgsql;
 
 -- Создаем процедуру заполнения DM.DM_ACCOUNT_BALANCE_F с 1 по 31 января 2018 года
 ------------------------------------------------
-DO $$
+
+CREATE OR REPLACE PROCEDURE dm.fill_account_balance_procedure(start_date DATE, end_date DATE)
+LANGUAGE plpgsql
+AS $$
 DECLARE
-    currentDate DATE := '2018-01-01';
+    currentDate DATE := start_date;
     table_or_function_name VARCHAR := 'fill_account_balance_f';
     ready_to_start TIMESTAMP;
     start_time TIMESTAMP;
@@ -276,8 +282,9 @@ BEGIN
     ready_to_start := clock_timestamp();
     start_time := clock_timestamp();
     
-    FOR i IN 1 .. 31 LOOP
-        PERFORM ds.fill_account_balance_f(TO_DATE('2018-01-' || LPAD(i::TEXT, 2, '0'), 'YYYY-MM-DD'));
+    WHILE currentDate <= end_date LOOP
+        PERFORM ds.fill_account_balance_f(currentDate);
+        currentDate := currentDate + INTERVAL '1 day';
     END LOOP;
     
     end_time := clock_timestamp();
@@ -292,11 +299,5 @@ BEGIN
             count_record);
 END $$;
 
------
---ПРОВЕРКА
-SELECT * FROM DM.DM_ACCOUNT_BALANCE_F
-	where account_rk = 36213979
-----
-SELECT * FROM DM.DM_ACCOUNT_TURNOVER_F
-	where account_rk = 36213979
----
+
+CALL dm.fill_account_balance_procedure('2018-01-01', '2018-01-31');

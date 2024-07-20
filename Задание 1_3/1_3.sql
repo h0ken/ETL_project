@@ -3,7 +3,6 @@
 -- 1.3 расчет 101 формы за январь 2018 года
 --------------------------------------------
 DROP TABLE IF EXISTS DM.DM_F101_ROUND_F;
-
 CREATE TABLE DM.DM_F101_ROUND_F(
 	from_date DATE,
 	to_date DATE,

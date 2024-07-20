@@ -90,6 +90,7 @@ CREATE TABLE ds.md_ledger_account_s (
 );
 
 CREATE SCHEMA IF NOT EXISTS logs;
+
 DROP TABLE IF EXISTS LOGS.log_info;
 CREATE TABLE LOGS.log_info (
       id 						SERIAL PRIMARY KEY

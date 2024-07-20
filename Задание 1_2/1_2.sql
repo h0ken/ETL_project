@@ -6,6 +6,7 @@
 -- Создание таблицы витрины оборотов DM.DM_ACCOUNT_TURNOVER_F
 ------------------------------------------------
 CREATE SCHEMA IF NOT EXISTS DM;
+
 DROP TABLE IF EXISTS DM.DM_ACCOUNT_TURNOVER_F;
 CREATE TABLE DM.DM_ACCOUNT_TURNOVER_F(
 	  on_date 				DATE
